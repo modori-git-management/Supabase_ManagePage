@@ -14,12 +14,14 @@ input[type=checkbox]{display:inline;width:auto}
 .sub{margin:0 0 8px}.sub button{margin-right:4px}p{white-space:pre-wrap;word-break:break-word}
 </style></head><body><main>
 <div id="login" hidden><h2>MODORI 관리자 로그인</h2>
-<form id="lf"><input id="em" type="email" placeholder="이메일" autocomplete="username" required><input id="pw" type="password" placeholder="비밀번호" autocomplete="current-password" required><button>로그인</button></form></div>
+<form id="lf"><input id="em" type="email" placeholder="이메일" autocomplete="username" required><input id="pw" type="password" placeholder="비밀번호" autocomplete="current-password" required><button>로그인</button></form><p class=m id=ver></p></div>
 <div id="app" hidden><nav id="nav"></nav><div id="v"></div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
 const $=s=>document.querySelector(s);
+const BUILD='v2 · DB 관리자 확인 (am_i_admin)'; // 화면에 이 문구가 보이면 새 코드가 배포된 것
+$('#ver').textContent='콘솔 '+BUILD;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fdate=v=>v?new Date(v).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}):'';
 const fsec=n=>{n=Number(n)||0;const h=Math.floor(n/3600),m=Math.floor(n%3600/60);return h?`${h}시간 ${m}분`:`${m}분`};
@@ -43,11 +45,12 @@ async function init(){
 
 // 입장 확인: 토큰 속 값이 아니라 DB(core.admins)에 직접 물어봄
 async function start(s){
- let ok=false;
- try{ok=(await rpc('core','am_i_admin'))===true}catch{}
- if(!ok){await sb.auth.signOut();$('#app').hidden=true;$('#login').hidden=false;return alert('관리자 권한이 없어요')}
+ let ok=false,why='';
+ try{ok=(await rpc('core','am_i_admin'))===true}catch(e){why=e.message}
+ if(!ok){await sb.auth.signOut();$('#app').hidden=true;$('#login').hidden=false;
+  return alert(why?'관리자 확인 중 오류가 났어요:\n'+why:'관리자 권한이 없어요 (core.admins에 등록되지 않은 계정이에요)')}
  tok=s.access_token;$('#login').hidden=true;$('#app').hidden=false;
- $('#nav').innerHTML=Object.entries(VIEWS).map(([k,v])=>`<button id="n-${k}" data-act="view" data-k="${k}">${v[0]}</button>`).join('')+'<button data-act="logout">로그아웃</button>';
+ $('#nav').innerHTML=Object.entries(VIEWS).map(([k,v])=>`<button id="n-${k}" data-act="view" data-k="${k}">${v[0]}</button>`).join('')+'<button data-act="logout">로그아웃</button> <span class=m>'+esc(BUILD)+'</span>';
  if(!timer)timer=setInterval(()=>{if(document.hidden)return;tick++;
   if(cur=='srv')go('srv'); // 서버 상태: 10초마다
   else if(cur=='inq'&&tick%3==0&&![...document.querySelectorAll('#v textarea')].some(t=>t.value))go('inq')},10000); // 문의: 30초마다 (작성 중이면 건너뜀)
