@@ -1,42 +1,189 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MODORI 관리자 콘솔</title>
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="light dark"><title>MODORI 관리자 콘솔</title>
 <style>
-:root{--bg:#fff;--fg:#1a1a1a;--mu:#777;--bd:#ddd;--ac:#2563eb;--er:#c62828}
-@media(prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mu:#999;--bd:#333;--er:#ef5350}}
-body{margin:0;font:14px system-ui,sans-serif;background:var(--bg);color:var(--fg)}
-main{max-width:1040px;margin:auto;padding:16px}
-nav button{margin:0 4px 8px 0}nav .on,.sub .on{background:var(--ac);color:#fff;border-color:var(--ac)}
-button,input,textarea,select{font:inherit;padding:6px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--fg)}
-button{cursor:pointer}button:disabled{opacity:.5;cursor:default}
-input,textarea{display:block;width:100%;box-sizing:border-box;margin:6px 0}textarea{min-height:80px}
-input[type=checkbox]{display:inline;width:auto}
-.c{border:1px solid var(--bd);border-radius:8px;padding:10px;margin:8px 0}.m{color:var(--mu);font-size:12px}.err{color:var(--er)}
-.w{overflow-x:auto}table{border-collapse:collapse;width:100%}td,th{border:1px solid var(--bd);padding:4px 8px;text-align:left;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis}
-.sub{margin:0 0 8px}.sub button{margin-right:4px}p{white-space:pre-wrap;word-break:break-word}
-</style></head><body><main>
-<div id="login" hidden><h2>MODORI 관리자 로그인</h2>
-<form id="lf"><input id="em" type="email" placeholder="이메일" autocomplete="username" required><input id="pw" type="password" placeholder="비밀번호" autocomplete="current-password" required><button>로그인</button></form><p class=m id=ver></p></div>
-<div id="app" hidden><nav id="nav"></nav><div id="v"></div></div>
-</main>
+/* ── 색상은 이 블록만 바꾸면 전체가 바뀝니다 ─────────────────────────
+   잉크(왼쪽 메뉴) + 종이(본문) + 형광펜(강조). 공부하는 서비스라서 노트와 형광펜을 모티프로 했어요. */
+:root{
+ --ink:#1b2140; --ink2:#2a3160; --ink-t:#b9c0e0;           /* 왼쪽 메뉴 */
+ --paper:#f4f5fa; --surface:#ffffff; --sunk:#eceef6; --line:#e1e4ef;   /* 배경, 카드, 표 머리글, 구분선 */
+ --tx:#1a1f36; --mu:#626a80;                                /* 글자, 보조 글자 */
+ --mark:#ffd84a; --mark-soft:rgba(255,216,74,.55);          /* 형광펜 */
+ --pri:#1b2140; --on-pri:#ffffff; --focus:#3b55e6;          /* 주요 버튼, 키보드 포커스 */
+ --ok:#16875d; --bad:#cf3a3a; --warn:#a56a00;               /* 정상, 문제, 주의 */
+}
+@media(prefers-color-scheme:dark){:root{
+ --ink:#0a0d1d; --ink2:#1a2043; --ink-t:#9aa1c4;
+ --paper:#0f1226; --surface:#171b36; --sunk:#12162d; --line:#2a2f52;
+ --tx:#e6e8f5; --mu:#9ba2c6;
+ --mark-soft:rgba(255,216,74,.38);
+ --pri:#ffd84a; --on-pri:#1b2140; --focus:#ffd84a;
+ --ok:#43c795; --bad:#ff8080; --warn:#f0b429;
+}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{font:14px/1.5 system-ui,-apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;background:var(--paper);color:var(--tx);overflow:hidden;font-variant-numeric:tabular-nums}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+p{margin:0;white-space:pre-wrap;word-break:break-word}
+button,input,textarea{font:inherit;color:inherit}
+button{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:6px 12px;min-height:34px;cursor:pointer}
+button:hover{background:var(--sunk)}
+button:disabled{opacity:.5;cursor:default}
+button.primary{background:var(--pri);color:var(--on-pri);border-color:var(--pri);font-weight:600}
+button.primary:hover{filter:brightness(1.12)}
+button.ghost{background:none}
+input,textarea{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:8px 10px;margin:4px 0 10px}
+input[type=checkbox]{width:auto;margin:0 6px 0 0;vertical-align:-2px}
+textarea{min-height:84px;resize:vertical}
+label{display:block;font-size:13px;color:var(--mu)}
+.m{color:var(--mu);font-size:12px}.err{color:var(--bad)}
+
+/* 로그인 */
+#login{display:grid;place-items:center;height:100dvh;padding:16px}
+.login-card{width:min(360px,100%);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:28px 26px 22px}
+.wordmark{font-size:26px;font-weight:800;letter-spacing:.02em;margin:0}
+.wordmark span{background:linear-gradient(transparent 62%,var(--mark-soft) 62% 92%,transparent 92%);padding:0 .1em}
+.login-card .sub{color:var(--mu);margin:2px 0 22px}
+.login-card button{width:100%;margin-top:4px}
+
+/* 전체 틀: 왼쪽 메뉴 + 본문. 화면 높이에 딱 맞추고 스크롤은 안쪽에서만 */
+#app{display:grid;grid-template-columns:208px minmax(0,1fr);height:100dvh}
+#side{background:var(--ink);color:var(--ink-t);display:flex;flex-direction:column;padding:18px 12px 14px;min-height:0}
+.brand{font-weight:800;font-size:18px;letter-spacing:.02em;color:#fff;padding:2px 10px 16px}
+.brand small{display:block;font-weight:500;font-size:12px;color:var(--ink-t);letter-spacing:0;margin-top:2px}
+#nav{display:flex;flex-direction:column;gap:2px;overflow:auto;flex:1;min-height:0}
+#nav button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;border:0;background:none;color:var(--ink-t);padding:8px 12px;border-radius:6px;min-height:38px}
+#nav button:hover{background:var(--ink2);color:#fff}
+#nav button.on{background:var(--ink2);color:#fff;font-weight:600;box-shadow:inset 3px 0 0 #ffd84a}
+.badge{background:#ffd84a;color:#1b2140;border-radius:999px;font-size:11px;font-weight:700;padding:0 7px;line-height:18px}
+.side-foot{margin-top:8px;padding:12px 4px 0;border-top:1px solid var(--ink2);display:flex;flex-direction:column;gap:8px;font-size:12px}
+.side-foot button{background:none;border:1px solid var(--ink2);color:var(--ink-t)}
+.side-foot button:hover{background:var(--ink2);color:#fff}
+#main{display:flex;flex-direction:column;min-width:0;min-height:0;height:100dvh}
+#top{display:flex;align-items:center;gap:12px;padding:16px 22px 12px}
+#top h1{font-size:20px;line-height:1.3;margin:0;font-weight:700;flex:1}
+#v{flex:1;min-height:0;display:flex;flex-direction:column;gap:12px;padding:0 22px 18px}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;border-radius:0;background:none;min-height:32px}
+.seg button.on{background:var(--pri);color:var(--on-pri);font-weight:600}
+
+/* 표 */
+.scroll{flex:1;min-height:0;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.scroll.plain{background:none;border:0;border-radius:0}
+table{border-collapse:separate;border-spacing:0;width:100%}
+th{position:sticky;top:0;z-index:1;background:var(--sunk);text-align:left;font-weight:600;font-size:12px;color:var(--mu);padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:var(--sunk)}
+.empty{padding:36px 16px;text-align:center;color:var(--mu)}
+.pill{display:inline-block;padding:0 8px;border-radius:999px;font-size:12px;line-height:20px;background:var(--sunk);color:var(--mu);white-space:nowrap}
+.pill.ok{color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.pill.bad{color:var(--bad);background:color-mix(in srgb,var(--bad) 14%,transparent)}
+.pill.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 16%,transparent)}
+
+/* 문의·공지 목록 */
+.item{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;color:var(--mu);font-size:12px;margin-bottom:6px}
+.ttl{font-weight:600;margin-bottom:2px}
+.answer{margin-top:8px;padding:6px 0 6px 12px;border-left:3px solid #ffd84a}
+.item textarea{margin-top:10px}
+.cols{display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:12px;flex:1;min-height:0}
+.formcard{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;align-self:start}
+.cols>.scroll,.cols>.list{min-height:0}
+.list{overflow:auto}
+
+/* 개요 */
+.ledger{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+button.cell{display:block;text-align:left;border:0;border-right:1px solid var(--line);border-radius:0;background:none;padding:14px 16px;min-height:0;cursor:pointer}
+button.cell:last-child{border-right:0}
+button.cell:hover{background:var(--sunk)}
+.cell .lb{display:block;font-size:12px;color:var(--mu)}
+.cell .nm{display:inline-block;font-size:30px;line-height:1.25;font-weight:700;margin:2px 0;background:linear-gradient(transparent 62%,var(--mark-soft) 62% 92%,transparent 92%);padding:0 .12em;margin-left:-.12em}
+.cell .sb{display:block;font-size:12px;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.grid2{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:12px;flex:1;min-height:0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-height:0;min-width:0}
+.panel header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line);font-weight:600}
+.panel header button{min-height:28px;padding:2px 10px;font-weight:400;font-size:13px}
+.pb{overflow:auto;flex:1;min-height:0}
+button.row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);border-radius:0;background:none;padding:9px 14px;min-height:0}
+button.row:last-child{border-bottom:0}
+button.row:hover{background:var(--sunk)}
+.row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .rk{width:22px;font-weight:700;color:var(--mu)}
+.statusline{display:flex;flex-wrap:wrap;gap:6px 22px;align-items:center;padding:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:13px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--mu)}
+.dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;padding:14px;margin:0}
+.kv dt{color:var(--mu)}.kv dd{margin:0;font-weight:600}
+
+/* 좁은 화면(휴대폰): 한 화면 고정을 풀고 위쪽 메뉴로 바꿈 */
+@media(max-width:820px){
+ body{overflow:auto}
+ #app{display:block;height:auto}
+ #side{flex-direction:row;align-items:center;gap:8px;padding:8px;position:sticky;top:0;z-index:5}
+ .brand{padding:0 8px;white-space:nowrap}.brand small{display:none}
+ #nav{flex-direction:row;flex:1;overflow-x:auto}
+ #nav button{width:auto;white-space:nowrap}
+ .side-foot{flex-direction:row;margin:0;padding:0;border:0;align-items:center}.side-foot .m{display:none}
+ #main{height:auto}
+ #v{display:block;padding:0 14px 18px}
+ #v>*{margin-bottom:12px}
+ .scroll{max-height:70vh}
+ .ledger{grid-template-columns:repeat(2,minmax(0,1fr))}
+ button.cell{border-bottom:1px solid var(--line)}
+ button.cell:last-child{grid-column:1/-1;border-bottom:0}
+ .grid2,.cols{display:block}.panel{margin-bottom:12px;max-height:60vh}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style></head><body>
+<div id="login" hidden>
+ <form id="lf" class="login-card">
+  <h1 class="wordmark"><span>MODORI</span></h1><p class="sub">관리자 콘솔</p>
+  <label>이메일<input id="em" type="email" autocomplete="username" required></label>
+  <label>비밀번호<input id="pw" type="password" autocomplete="current-password" required></label>
+  <button class="primary">로그인</button>
+  <p class="m" id="ver" style="margin-top:14px"></p>
+ </form>
+</div>
+<div id="app" hidden>
+ <aside id="side">
+  <div class="brand">MODORI<small>관리자 콘솔</small></div>
+  <nav id="nav"></nav>
+  <div class="side-foot"><button data-act="logout">로그아웃</button><span class="m" id="build"></span></div>
+ </aside>
+ <section id="main">
+  <header id="top"><h1 id="title"></h1><span class="m" id="stamp"></span><button class="ghost" data-act="refresh">새로고침</button></header>
+  <div id="v"></div>
+ </section>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
 const $=s=>document.querySelector(s);
-const BUILD='v2 · DB 관리자 확인 (am_i_admin)'; // 화면에 이 문구가 보이면 새 코드가 배포된 것
-$('#ver').textContent='콘솔 '+BUILD;
+const BUILD='v3'; // 화면에 이 문구가 보이면 새 코드가 배포된 것
+$('#ver').textContent='콘솔 '+BUILD;$('#build').textContent='콘솔 '+BUILD;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fdate=v=>v?new Date(v).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}):'';
+const ftime=()=>new Date().toLocaleTimeString('ko-KR',{timeZone:'Asia/Seoul'});
+const kday=v=>new Date(v).toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'});
+const ago=v=>{const m=Math.max(0,Math.round((Date.now()-new Date(v))/60000));return m<1?'방금':m<60?m+'분 전':m<1440?Math.floor(m/60)+'시간 전':Math.floor(m/1440)+'일 전'};
 const fsec=n=>{n=Number(n)||0;const h=Math.floor(n/3600),m=Math.floor(n%3600/60);return h?`${h}시간 ${m}분`:`${m}분`};
 const gender=g=>g==='male'?'남':g==='female'?'여':(g||'');
-const yn=b=>b?'예':'';
+const CAT={bug:'버그',feature:'기능 제안',account:'계정',room:'방',etc:'기타'};
+const pill=(t,k='')=>({h:`<span class="pill ${['ok','bad','warn'].includes(k)?k:''}">${esc(t)}</span>`});
+const cell=v=>v&&typeof v==='object'&&'h' in v?v.h:esc(v);
+const tbl=(rows,cols,empty='데이터가 없어요')=>!rows.length?`<div class=empty>${esc(empty)}</div>`:'<table><thead><tr>'+cols.map(c=>`<th>${esc(c[0])}</th>`).join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>`<td>${cell(c[1](r))}</td>`).join('')+'</tr>').join('')+'</tbody></table>';
+const scroll=(h,cls='')=>`<div class="scroll ${cls}">${h}</div>`;
+const seg=(items,cur,act,key)=>`<div class=seg>${items.map(([k,l])=>`<button class="${k==cur?'on':''}" data-act="${act}" data-${key}="${esc(k)}">${esc(l)}</button>`).join('')}</div>`;
 
 // 데이터는 모두 DB 함수(RPC)로 읽음. 각 함수가 관리자 여부를 다시 확인함.
-let sb,tok,cur='users',seq=0,period='month',istat='open',timer=null,tick=0;
+let sb,tok,cur='home',seq=0,period='month',istat='open',timer=null,tick=0;
 async function rpc(schema,fn,args={}){const{data,error}=await sb.schema(schema).rpc(fn,args);if(error)throw new Error(error.message);return data}
 async function api(p,o={}){const r=await fetch(p,{...o,headers:{'content-type':'application/json',Authorization:'Bearer '+tok}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||r.status);return d}
-const tbl=(rows,cols)=>!rows.length?'<p class=m>데이터 없음</p>':'<div class=w><table><tr>'+cols.map(c=>`<th>${esc(c[0])}</th>`).join('')+'</tr>'+rows.map(r=>'<tr>'+cols.map(c=>`<td>${esc(c[1](r))}</td>`).join('')+'</tr>').join('')+'</table></div>';
 
 const VIEWS={
- users:['이용자',vUsers],rank:['랭크',vRank],rooms:['방',vRooms],inq:['문의',vInq],
+ home:['개요',vHome],users:['이용자',vUsers],rank:['랭크',vRank],rooms:['방',vRooms],inq:['문의',vInq],
  rep:['신고',vRep],ann:['공지',vAnn],mail:['이메일',vMail],srv:['서버 상태',vSrv]};
+const setBadge=n=>{const b=$('#b-inq');if(b){b.textContent=n;b.hidden=!n}};
 
 async function init(){
  const c=await(await fetch('/api/config')).json();sb=supabase.createClient(c.url,c.anon);
@@ -50,59 +197,84 @@ async function start(s){
  if(!ok){await sb.auth.signOut();$('#app').hidden=true;$('#login').hidden=false;
   return alert(why?'관리자 확인 중 오류가 났어요:\n'+why:'관리자 권한이 없어요 (core.admins에 등록되지 않은 계정이에요)')}
  tok=s.access_token;$('#login').hidden=true;$('#app').hidden=false;
- $('#nav').innerHTML=Object.entries(VIEWS).map(([k,v])=>`<button id="n-${k}" data-act="view" data-k="${k}">${v[0]}</button>`).join('')+'<button data-act="logout">로그아웃</button> <span class=m>'+esc(BUILD)+'</span>';
+ $('#nav').innerHTML=Object.entries(VIEWS).map(([k,v])=>`<button id="n-${k}" data-act="view" data-k="${k}"><span>${v[0]}</span>${k=='inq'?'<span class=badge id=b-inq hidden></span>':''}</button>`).join('');
  if(!timer)timer=setInterval(()=>{if(document.hidden)return;tick++;
   if(cur=='srv')go('srv'); // 서버 상태: 10초마다
-  else if(cur=='inq'&&tick%3==0&&![...document.querySelectorAll('#v textarea')].some(t=>t.value))go('inq')},10000); // 문의: 30초마다 (작성 중이면 건너뜀)
- go('users')}
+  else if((cur=='inq'||cur=='home')&&tick%3==0&&![...document.querySelectorAll('#v textarea')].some(t=>t.value))go(cur); // 30초마다 (답변 작성 중이면 건너뜀)
+  else if(tick%6==0)rpc('stu','admin_list_inquiries',{p_status:'open'}).then(d=>setBadge(d.inquiries.length)).catch(()=>{}); // 문의 배지: 1분마다
+ },10000);
+ go('home')}
 
 async function go(k){
  cur=k;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.id=='n-'+k));
+ $('#title').textContent=VIEWS[k][0];
  const my=++seq;let h;
  try{h=await VIEWS[k][1]()}catch(e){h='<p class=err>'+esc(e.message)+'</p>'}
- if(my===seq)$('#v').innerHTML=h}
+ if(my===seq){$('#v').innerHTML=h;$('#stamp').textContent='갱신 '+ftime()}}
+
+async function vHome(){
+ const r=await Promise.allSettled([rpc('stu','admin_list_users',{p_max:2000}),rpc('stu','admin_list_inquiries',{p_status:'open'}),
+  rpc('stu','admin_list_reports',{p_max:200}),rpc('stu','admin_list_rooms',{p_max:2000}),rpc('stu','admin_list_ranking',{p_period:'week',p_max:8}),api('/api/status')]);
+ const[u,iq,rp,rm,rk,st]=r.map(x=>x.status==='fulfilled'?x.value:null);
+ const dash='-',today=kday(Date.now());
+ const users=u?.users,inqs=iq?.inquiries,reps=rp?.reports,rooms=rm?.rooms?.filter(x=>!x.deleted);
+ if(inqs)setBadge(inqs.length);
+ const svcOk=st?st.services.every(s=>s.ok)&&!st.db?.error:null;
+ const cellH=(k,lb,nm,sb)=>`<button class=cell data-act=view data-k=${k}><span class=lb>${esc(lb)}</span><span class=nm>${esc(nm)}</span><span class=sb>${esc(sb)}</span></button>`;
+ const ledger=`<div class=ledger>`+
+  cellH('users','이용자',users?users.length:dash,users?`오늘 가입 ${users.filter(x=>kday(x.createdAt)==today).length}명`:'불러오지 못했어요')+
+  cellH('inq','답변 기다리는 문의',inqs?inqs.length:dash,inqs?(inqs.length?`가장 오래된 문의 ${ago(inqs[inqs.length-1].createdAt)}`:'밀린 문의가 없어요'):'불러오지 못했어요')+
+  cellH('rep','신고',reps?reps.length:dash,reps?(reps.length?`최근 신고 ${ago(reps[0].createdAt)}`:'접수된 신고가 없어요'):'불러오지 못했어요')+
+  cellH('rooms','방',rooms?rooms.length:dash,rooms?`공식 방 ${rooms.filter(x=>x.type==='official').length}개`:'불러오지 못했어요')+
+  cellH('srv','서버',svcOk===null?dash:svcOk?'정상':'확인 필요',st&&!st.db?.error?`DB ${st.db.dbSizeMb}MB, 연결 ${st.db.connections}`:'서버 상태 탭에서 확인')+`</div>`;
+ const inqPanel=`<section class=panel><header>답변 기다리는 문의<button class=ghost data-act=view data-k=inq>전체 보기</button></header><div class=pb>`+
+  (inqs?(inqs.length?inqs.slice(0,12).map(q=>`<button class=row data-act=view data-k=inq><span class=pill>${esc(CAT[q.category]||q.category)}</span><span class=t>${esc(q.title)}</span><span class=m>${esc(q.nickname||'')}</span><span class=m>${esc(ago(q.createdAt))}</span></button>`).join(''):'<div class=empty>답변 기다리는 문의가 없어요</div>'):'<div class=empty>불러오지 못했어요</div>')+`</div></section>`;
+ const ranked=rk?.rankings?.filter(x=>x.rank!=null).slice(0,8);
+ const rkPanel=`<section class=panel><header>이번 주 공부 랭킹<button class=ghost data-act=view data-k=rank>전체 보기</button></header><div class=pb>`+
+  (ranked?(ranked.length?ranked.map(x=>`<button class=row data-act=view data-k=rank><span class=rk>${esc(x.rank)}</span><span class=t>${esc(x.nickname)}</span><span class=m>${esc(fsec(x.totalSeconds))}</span></button>`).join(''):'<div class=empty>이번 주 기록이 아직 없어요</div>'):'<div class=empty>불러오지 못했어요</div>')+`</div></section>`;
+ const line=st?`<div class=statusline>`+st.services.map(s=>`<span><i class="dot ${s.ok?'ok':'bad'}"></i>${esc(s.service)} ${esc(s.ms)}ms</span>`).join('')+(st.db?.error?`<span class=err>DB: ${esc(st.db.error)}</span>`:`<span>전체 계정 ${esc(st.db.users)}명</span><span>가입자 ${esc(Object.entries(st.db.members||{}).map(([k,v])=>k+' '+v).join(', '))}</span>`)+`</div>`:`<div class=statusline><span class=err>서버 상태를 불러오지 못했어요</span></div>`;
+ return ledger+`<div class=grid2>${inqPanel}${rkPanel}</div>`+line}
 
 async function vUsers(){const d=await rpc('stu','admin_list_users',{p_max:2000});
- return `<p class=m>STU 이용자 ${d.users.length}명${d.truncated?' (일부만 표시)':''}</p>`+tbl(d.users,[
+ return `<div class=bar><span class=m>STU 이용자 ${d.users.length}명${d.truncated?', 일부만 표시':''}</span></div>`+scroll(tbl(d.users,[
   ['닉네임',r=>r.nickname],['이메일',r=>r.email],['성별',r=>gender(r.gender)],['출생연도',r=>r.birthYear],
-  ['국적',r=>r.nationality],['시험',r=>r.exam],['친구코드',r=>r.friendCode],['가입일',r=>fdate(r.createdAt)]])}
+  ['국적',r=>r.nationality],['시험',r=>r.exam],['친구코드',r=>r.friendCode],['가입일',r=>fdate(r.createdAt)]]))}
 
 async function vRank(){const d=await rpc('stu','admin_list_ranking',{p_period:period,p_max:200});
- const P={day:'오늘',week:'이번 주(월~)',month:'이번 달',all:'전체'};
- return `<select id=per data-sel="period">${Object.entries(P).map(([k,v])=>`<option value="${k}" ${k==period?'selected':''}>${v}</option>`).join('')}</select> <span class=m>${d.from?esc(d.from)+' 부터 · ':''}운영자는 순위에서 제외${d.truncated?' · 일부만 표시':''}</span>`+tbl(d.rankings,[
+ return `<div class=bar>${seg([['day','오늘'],['week','이번 주(월요일 시작)'],['month','이번 달'],['all','전체']],period,'period','p')}<span class=m>${d.from?esc(d.from)+'부터, ':''}운영자는 순위에서 제외${d.truncated?', 일부만 표시':''}</span></div>`+scroll(tbl(d.rankings,[
   ['순위',r=>r.rank??'-'],['닉네임',r=>r.nickname],['이메일',r=>r.email],['시험',r=>r.exam],
-  ['공부시간',r=>fsec(r.totalSeconds)],['운영자',r=>yn(r.isAdmin)],['탈퇴 요청',r=>yn(r.deletionRequested)]])}
+  ['공부시간',r=>fsec(r.totalSeconds)],['운영자',r=>r.isAdmin?pill('운영자'):''],['탈퇴 요청',r=>r.deletionRequested?pill('요청됨','warn'):'']]))}
 
 async function vRooms(){const d=await rpc('stu','admin_list_rooms',{p_max:2000});
- return tbl(d.rooms,[['이름',r=>r.name],['종류',r=>r.type],['방장',r=>r.ownerNickname],['인원',r=>r.memberCount],
-  ['공개',r=>yn(r.listed)],['시험',r=>r.exam],['누적',r=>fsec(r.totalSeconds)],['만든 날',r=>fdate(r.createdAt)],
-  ['삭제',r=>r.deleted?'삭제됨 '+fdate(r.deletedAt):'']])}
+ return `<div class=bar><span class=m>방 ${d.rooms.length}개 (삭제된 방 포함)</span></div>`+scroll(tbl(d.rooms,[['이름',r=>r.name],['종류',r=>r.type],['방장',r=>r.ownerNickname],['인원',r=>r.memberCount],
+  ['공개',r=>r.listed?pill('공개','ok'):''],['시험',r=>r.exam],['누적',r=>fsec(r.totalSeconds)],['만든 날',r=>fdate(r.createdAt)],
+  ['삭제',r=>r.deleted?pill('삭제됨 '+fdate(r.deletedAt),'bad'):'']]))}
 
 async function vInq(){const d=await rpc('stu','admin_list_inquiries',{p_status:istat});
- const bar=`<div class=sub>${[['open','답변 대기'],['answered','답변 완료']].map(([k,v])=>`<button class="${k==istat?'on':''}" data-act="inqstat" data-s="${k}">${v}</button>`).join('')}<button data-act="refresh">새로고침</button></div>`;
- return bar+(d.inquiries.map(q=>`<div class=c><span class=m>${esc(q.category)} · ${esc(q.nickname||'(알 수 없음)')} · ${esc(fdate(q.createdAt))}${q.meta&&q.meta.device?' · '+esc([q.meta.device,q.meta.os,q.meta.appVersion].filter(Boolean).join(' / ')):''}</span>
-  <p><b>${esc(q.title)}</b></p><p>${esc(q.body)}</p>`+
-  (q.answer?`<p class=m>↳ 답변 (${esc(fdate(q.answer.answeredAt))})</p><p>${esc(q.answer.body)}</p>`:'')+
-  (q.status=='open'?`<textarea placeholder="답변 (1~2000자)" maxlength=2000></textarea><button data-act="reply" data-u="${esc(q.userId)}" data-i="${esc(q.id)}">답변 등록</button>`:'')+`</div>`).join('')||'<p class=m>문의 없음</p>')}
+ if(istat=='open')setBadge(d.inquiries.length);
+ return `<div class=bar>${seg([['open','답변 대기'],['answered','답변 완료']],istat,'inqstat','s')}</div>`+scroll(
+  (d.inquiries.map(q=>`<div class=item><div class=meta><span class=pill>${esc(CAT[q.category]||q.category)}</span><span>${esc(q.nickname||'(알 수 없음)')}</span><span>${esc(fdate(q.createdAt))}</span>${q.meta&&q.meta.device?`<span>${esc([q.meta.device,q.meta.os,q.meta.appVersion].filter(Boolean).join(' / '))}</span>`:''}</div>
+  <p class=ttl>${esc(q.title)}</p><p>${esc(q.body)}</p>`+
+  (q.answer?`<div class=answer><div class=meta>답변 ${esc(fdate(q.answer.answeredAt))}</div><p>${esc(q.answer.body)}</p></div>`:'')+
+  (q.status=='open'?`<textarea placeholder="답변 (1~2000자)" maxlength=2000></textarea><button class=primary data-act="reply" data-u="${esc(q.userId)}" data-i="${esc(q.id)}">답변 등록</button>`:'')+`</div>`).join('')||`<div class=empty>${istat=='open'?'답변 기다리는 문의가 없어요':'답변한 문의가 아직 없어요'}</div>`),'plain')}
 
 async function vRep(){const d=await rpc('stu','admin_list_reports',{p_max:200});
- return tbl(d.reports,[['일시',r=>fdate(r.createdAt)],['신고자',r=>r.reporterNickname],['대상',r=>r.targetNickname],
-  ['사유',r=>r.reason],['내용',r=>r.detail],['방',r=>r.roomId]])}
+ return `<div class=bar><span class=m>최근 신고 ${d.reports.length}건</span></div>`+scroll(tbl(d.reports,[['일시',r=>fdate(r.createdAt)],['신고자',r=>r.reporterNickname],['대상',r=>r.targetNickname],
+  ['사유',r=>r.reason],['내용',r=>r.detail],['방',r=>r.roomId]],'접수된 신고가 없어요'))}
 
 async function vAnn(){const d=await rpc('stu','list_notices');
- return `<p class=m>STU 공지 (앱에 최대 50개 표시)</p><input id=at placeholder="제목 (1~60자)" maxlength=60><textarea id=ab placeholder="내용 (1~2000자)" maxlength=2000></textarea><label><input type=checkbox id=ap> 상단 고정</label> <button data-act="addnotice">등록</button>`+
-  (d.notices.map(a=>`<div class=c><b>${esc(a.title)}</b> <span class=m>${a.pinned?'고정 · ':''}${esc(fdate(a.createdAt))}</span><p>${esc(a.body)}</p><button data-act="delnotice" data-id="${esc(a.id)}">삭제</button></div>`).join('')||'<p class=m>공지 없음</p>')}
+ return `<div class=cols><div class=formcard><b>새 공지 (STU 앱에 표시)</b><label style="margin-top:10px">제목<input id=at placeholder="1~60자" maxlength=60></label><label>내용<textarea id=ab placeholder="1~2000자" maxlength=2000></textarea></label><label><input type=checkbox id=ap>목록 맨 위에 고정</label><button class=primary data-act="addnotice" style="margin-top:12px">공지 등록</button></div>`+
+  `<div class=list>`+(d.notices.map(a=>`<div class=item><div class=meta>${a.pinned?'<span class="pill warn">고정</span>':''}<span>${esc(fdate(a.createdAt))}</span></div><p class=ttl>${esc(a.title)}</p><p>${esc(a.body)}</p><div style="margin-top:8px"><button data-act="delnotice" data-id="${esc(a.id)}">삭제</button></div></div>`).join('')||'<div class=empty>등록된 공지가 없어요</div>')+`</div></div>`}
 
 async function vMail(){const d=await rpc('core','admin_list_email_logs',{p_limit:100,p_service:null});
- return `<input id=mt type=email placeholder="받는 사람"><input id=ms placeholder="제목" maxlength=200><textarea id=mb placeholder="내용"></textarea><button data-act="send">발송</button><h3>발송 내역 <span class=m>(21일 보관)</span></h3>`+
-  tbl(d.logs,[['일시',r=>fdate(r.createdAt)],['받는 사람',r=>r.to],['제목',r=>r.subject],['결과',r=>r.status],['서비스',r=>r.service]])}
+ return `<div class=cols><div class=formcard><b>메일 보내기</b><label style="margin-top:10px">받는 사람<input id=mt type=email></label><label>제목<input id=ms maxlength=200></label><label>내용<textarea id=mb></textarea></label><button class=primary data-act="send">메일 보내기</button></div>`+
+  scroll(tbl(d.logs,[['일시',r=>fdate(r.createdAt)],['받는 사람',r=>r.to],['제목',r=>r.subject],['결과',r=>r.status=='sent'?pill('보냄','ok'):pill('실패','bad')],['서비스',r=>r.service]],'보낸 메일이 없어요 (기록은 21일 보관)'))+`</div>`}
 
 async function vSrv(){const d=await api('/api/status');const b=d.db||{};
- const db=b.error?`<p class=err>${esc(b.error)}</p>`:tbl([b],[['DB 크기',r=>r.dbSizeMb+' MB'],['DB 연결',r=>r.connections],['전체 계정',r=>r.users],
-  ['서비스별 가입자',r=>Object.entries(r.members||{}).map(([k,v])=>k+' '+v).join(', ')]]);
- return `<p class=m>${new Date().toLocaleTimeString('ko-KR')} 갱신 · 10초마다</p>`+tbl(d.services,[['항목',r=>r.service],['상태',r=>r.ok?'정상':'이상'],['응답코드',r=>r.status],['응답시간',r=>r.ms+' ms']])+'<h3>DB</h3>'+db}
+ return `<div class=grid2><section class=panel><header>연결 상태</header><div class=pb>${tbl(d.services,[['항목',r=>r.service],['상태',r=>r.ok?pill('정상','ok'):pill('이상','bad')],['응답코드',r=>r.status],['응답시간',r=>r.ms+' ms']])}</div></section>`+
+  `<section class=panel><header>데이터베이스</header><div class=pb>`+(b.error?`<p class=err style="padding:14px">${esc(b.error)}</p>`:`<dl class=kv><dt>DB 크기</dt><dd>${esc(b.dbSizeMb)} MB</dd><dt>DB 연결</dt><dd>${esc(b.connections)} (Supabase 내부 연결 포함)</dd><dt>전체 계정</dt><dd>${esc(b.users)}명</dd><dt>서비스별 가입자</dt><dd>${esc(Object.entries(b.members||{}).map(([k,v])=>k+' '+v).join(', ')||'-')}</dd></dl>`)+`</div></section></div>`}
 
-// 버튼·선택 처리 (data-act 방식: 사용자 데이터를 코드에 끼워 넣지 않음)
+// 버튼 처리 (data-act 방식: 사용자 데이터를 코드에 끼워 넣지 않음)
 document.addEventListener('click',async e=>{
  const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const a=b.dataset.act;
  b.disabled=true;
@@ -110,8 +282,9 @@ document.addEventListener('click',async e=>{
   if(a=='view')await go(b.dataset.k);
   else if(a=='logout'){await sb.auth.signOut();location.reload();return}
   else if(a=='refresh')await go(cur);
+  else if(a=='period'){period=b.dataset.p;await go('rank')}
   else if(a=='inqstat'){istat=b.dataset.s;await go('inq')}
-  else if(a=='reply'){const t=b.closest('.c').querySelector('textarea').value.trim();
+  else if(a=='reply'){const t=b.closest('.item').querySelector('textarea').value.trim();
    if(!t){alert('답변을 입력하세요');}
    else{await rpc('stu','admin_reply_inquiry',{p_body:{userId:b.dataset.u,inquiryId:b.dataset.i,reply:t}});await go('inq')}}
   else if(a=='addnotice'){await rpc('stu','post_notice',{p_title:$('#at').value,p_body:$('#ab').value,p_pinned:$('#ap').checked});await go('ann')}
@@ -119,7 +292,6 @@ document.addEventListener('click',async e=>{
   else if(a=='send'){await api('/api/send-email',{method:'POST',body:JSON.stringify({to:$('#mt').value,subject:$('#ms').value,body:$('#mb').value})});await go('mail')}
  }catch(err){alert(err.message)}
  finally{b.disabled=false}});
-document.addEventListener('change',e=>{if(e.target.dataset.sel=='period'){period=e.target.value;go('rank')}});
 $('#lf').addEventListener('submit',async e=>{e.preventDefault();
  const{data,error}=await sb.auth.signInWithPassword({email:$('#em').value.trim(),password:$('#pw').value});
  error?alert(error.message):start(data.session)});
