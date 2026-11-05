@@ -1,0 +1,50 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>관리자 콘솔</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mu:#777;--bd:#ddd;--ac:#2563eb}
+@media(prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mu:#999;--bd:#333}}
+body{margin:0;font:14px system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+main{max-width:960px;margin:auto;padding:16px}
+nav button{margin:0 4px 8px 0}nav .on{background:var(--ac);color:#fff}
+button,input,textarea,select{font:inherit;padding:6px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--fg)}
+input,textarea{display:block;width:100%;box-sizing:border-box;margin:6px 0}textarea{min-height:80px}
+.c{border:1px solid var(--bd);border-radius:8px;padding:10px;margin:8px 0}.m{color:var(--mu);font-size:12px}
+.w{overflow-x:auto}table{border-collapse:collapse;width:100%}td,th{border:1px solid var(--bd);padding:4px 8px;text-align:left;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+</style></head><body><main>
+<div id="login" hidden><h2>관리자 로그인</h2><input id="em" placeholder="이메일"><input id="pw" type="password" placeholder="비밀번호"><button onclick="login()">로그인</button></div>
+<div id="app" hidden><nav id="nav"></nav><div id="v"></div></div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TABLES=['announcements','inquiries','email_logs']; // 보고 싶은 테이블 추가 (RLS 관리자 정책 필요)
+const VIEWS={ann:['공지사항',()=>ann()],inq:['문의',()=>inq()],mail:['이메일',()=>mail()],tb:['테이블',()=>tb()],srv:['서버 상태',()=>srv()]};
+let sb,tok,cur='ann',tn=TABLES[0];
+const tbl=r=>!r.length?'<p class=m>데이터 없음</p>':'<div class=w><table><tr>'+Object.keys(r[0]).map(k=>`<th>${esc(k)}</th>`).join('')+'</tr>'+r.map(x=>'<tr>'+Object.values(x).map(v=>`<td>${esc(v&&typeof v=='object'?JSON.stringify(v):v)}</td>`).join('')+'</tr>').join('')+'</table></div>';
+async function api(p,o={}){const r=await fetch(p,{...o,headers:{'content-type':'application/json',Authorization:'Bearer '+tok}});const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);return d}
+async function init(){const c=await(await fetch('/api/config')).json();sb=supabase.createClient(c.url,c.anon);
+ sb.auth.onAuthStateChange((_,s)=>{if(s)tok=s.access_token});
+ const{data:{session}}=await sb.auth.getSession();session?start(session):$('#login').hidden=false}
+async function login(){const{data,error}=await sb.auth.signInWithPassword({email:$('#em').value,password:$('#pw').value});error?alert(error.message):start(data.session)}
+function start(s){if(s.user.app_metadata?.role!=='admin'){sb.auth.signOut();$('#login').hidden=false;return alert('관리자 권한이 없어요')}
+ tok=s.access_token;$('#login').hidden=true;$('#app').hidden=false;
+ $('#nav').innerHTML=Object.entries(VIEWS).map(([k,v])=>`<button id="n-${k}" onclick="go('${k}')">${v[0]}</button>`).join('')+'<button onclick="sb.auth.signOut().then(()=>location.reload())">로그아웃</button>';
+ sb.channel('inq').on('postgres_changes',{event:'*',schema:'public',table:'inquiries'},()=>cur=='inq'&&inq()).subscribe();
+ setInterval(()=>{if(cur=='srv'&&!document.hidden)srv()},10000); go('ann')}
+function go(k){cur=k;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.id=='n-'+k));VIEWS[k][1]()}
+async function ann(){const{data}=await sb.from('announcements').select('*').order('id',{ascending:false});
+ $('#v').innerHTML=`<input id=at placeholder="제목"><textarea id=ab placeholder="내용"></textarea><label><input type=checkbox id=ap style="display:inline;width:auto"> 바로 게시</label> <button onclick="addAnn()">등록</button>`+(data||[]).map(a=>`<div class=c><b>${esc(a.title)}</b> <span class=m>${a.published?'게시중':'비공개'}</span><p>${esc(a.body)}</p><button onclick="upAnn(${a.id},${!a.published})">${a.published?'내리기':'게시'}</button> <button onclick="delAnn(${a.id})">삭제</button></div>`).join('')}
+async function addAnn(){await sb.from('announcements').insert({title:$('#at').value,body:$('#ab').value,published:$('#ap').checked});ann()}
+async function upAnn(id,p){await sb.from('announcements').update({published:p}).eq('id',id);ann()}
+async function delAnn(id){if(confirm('삭제할까요?')){await sb.from('announcements').delete().eq('id',id);ann()}}
+async function inq(){const{data}=await sb.from('inquiries').select('*').order('id',{ascending:false}).limit(100);
+ $('#v').innerHTML=(data||[]).map(q=>`<div class=c><span class=m>#${q.id} · ${esc(q.email)} · ${new Date(q.created_at).toLocaleString('ko-KR')}</span><p>${esc(q.message)}</p><select onchange="setInq(${q.id},{status:this.value})">${['open','working','done'].map(s=>`<option ${s==q.status?'selected':''}>${s}</option>`).join('')}</select> <button onclick="ansInq(${q.id})">답변 기록</button>${q.answer?`<p>↳ ${esc(q.answer)}</p>`:''}</div>`).join('')||'<p class=m>문의 없음</p>'}
+async function setInq(id,v){await sb.from('inquiries').update(v).eq('id',id);inq()}
+function ansInq(id){const a=prompt('답변 내용');if(a)setInq(id,{answer:a,status:'done'})}
+async function mail(){const{data}=await sb.from('email_logs').select('*').order('id',{ascending:false}).limit(30);
+ $('#v').innerHTML=`<input id=mt placeholder="받는 사람"><input id=ms placeholder="제목"><textarea id=mb placeholder="내용"></textarea><button onclick="send()">발송</button><h3>발송 내역</h3>`+tbl(data||[])}
+async function send(){try{await api('/api/send-email',{method:'POST',body:JSON.stringify({to:$('#mt').value,subject:$('#ms').value,body:$('#mb').value})});mail()}catch(e){alert(e.message)}}
+async function tb(){const{data,error}=await sb.from(tn).select('*').limit(50);
+ $('#v').innerHTML=`<select onchange="tn=this.value;tb()">${TABLES.map(t=>`<option ${t==tn?'selected':''}>${t}</option>`).join('')}</select> <span class=m>최근 50행</span>`+(error?esc(error.message):tbl(data||[]))}
+async function srv(){try{const d=await api('/api/status');$('#v').innerHTML=`<p class=m>${new Date().toLocaleTimeString('ko-KR')} 갱신 · 10초마다</p>`+tbl(d.services)+'<h3>DB</h3>'+tbl([d.db])}catch(e){$('#v').innerHTML=esc(e.message)}}
+init();
+</script></body></html>
