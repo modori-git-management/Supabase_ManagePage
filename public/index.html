@@ -1,50 +1,124 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>관리자 콘솔</title>
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MODORI 관리자 콘솔</title>
 <style>
-:root{--bg:#fff;--fg:#1a1a1a;--mu:#777;--bd:#ddd;--ac:#2563eb}
-@media(prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mu:#999;--bd:#333}}
+:root{--bg:#fff;--fg:#1a1a1a;--mu:#777;--bd:#ddd;--ac:#2563eb;--er:#c62828}
+@media(prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mu:#999;--bd:#333;--er:#ef5350}}
 body{margin:0;font:14px system-ui,sans-serif;background:var(--bg);color:var(--fg)}
-main{max-width:960px;margin:auto;padding:16px}
-nav button{margin:0 4px 8px 0}nav .on{background:var(--ac);color:#fff}
+main{max-width:1040px;margin:auto;padding:16px}
+nav button{margin:0 4px 8px 0}nav .on,.sub .on{background:var(--ac);color:#fff;border-color:var(--ac)}
 button,input,textarea,select{font:inherit;padding:6px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--fg)}
+button{cursor:pointer}button:disabled{opacity:.5;cursor:default}
 input,textarea{display:block;width:100%;box-sizing:border-box;margin:6px 0}textarea{min-height:80px}
-.c{border:1px solid var(--bd);border-radius:8px;padding:10px;margin:8px 0}.m{color:var(--mu);font-size:12px}
+input[type=checkbox]{display:inline;width:auto}
+.c{border:1px solid var(--bd);border-radius:8px;padding:10px;margin:8px 0}.m{color:var(--mu);font-size:12px}.err{color:var(--er)}
 .w{overflow-x:auto}table{border-collapse:collapse;width:100%}td,th{border:1px solid var(--bd);padding:4px 8px;text-align:left;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+.sub{margin:0 0 8px}.sub button{margin-right:4px}p{white-space:pre-wrap;word-break:break-word}
 </style></head><body><main>
-<div id="login" hidden><h2>관리자 로그인</h2><input id="em" placeholder="이메일"><input id="pw" type="password" placeholder="비밀번호"><button onclick="login()">로그인</button></div>
+<div id="login" hidden><h2>MODORI 관리자 로그인</h2>
+<form id="lf"><input id="em" type="email" placeholder="이메일" autocomplete="username" required><input id="pw" type="password" placeholder="비밀번호" autocomplete="current-password" required><button>로그인</button></form></div>
 <div id="app" hidden><nav id="nav"></nav><div id="v"></div></div>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
-const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const TABLES=['announcements','inquiries','email_logs']; // 보고 싶은 테이블 추가 (RLS 관리자 정책 필요)
-const VIEWS={ann:['공지사항',()=>ann()],inq:['문의',()=>inq()],mail:['이메일',()=>mail()],tb:['테이블',()=>tb()],srv:['서버 상태',()=>srv()]};
-let sb,tok,cur='ann',tn=TABLES[0];
-const tbl=r=>!r.length?'<p class=m>데이터 없음</p>':'<div class=w><table><tr>'+Object.keys(r[0]).map(k=>`<th>${esc(k)}</th>`).join('')+'</tr>'+r.map(x=>'<tr>'+Object.values(x).map(v=>`<td>${esc(v&&typeof v=='object'?JSON.stringify(v):v)}</td>`).join('')+'</tr>').join('')+'</table></div>';
-async function api(p,o={}){const r=await fetch(p,{...o,headers:{'content-type':'application/json',Authorization:'Bearer '+tok}});const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);return d}
-async function init(){const c=await(await fetch('/api/config')).json();sb=supabase.createClient(c.url,c.anon);
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fdate=v=>v?new Date(v).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}):'';
+const fsec=n=>{n=Number(n)||0;const h=Math.floor(n/3600),m=Math.floor(n%3600/60);return h?`${h}시간 ${m}분`:`${m}분`};
+const gender=g=>g==='male'?'남':g==='female'?'여':(g||'');
+const yn=b=>b?'예':'';
+
+// 데이터는 모두 DB 함수(RPC)로 읽음. 각 함수가 관리자 여부를 다시 확인함.
+let sb,tok,cur='users',seq=0,period='month',istat='open',timer=null,tick=0;
+async function rpc(schema,fn,args={}){const{data,error}=await sb.schema(schema).rpc(fn,args);if(error)throw new Error(error.message);return data}
+async function api(p,o={}){const r=await fetch(p,{...o,headers:{'content-type':'application/json',Authorization:'Bearer '+tok}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||r.status);return d}
+const tbl=(rows,cols)=>!rows.length?'<p class=m>데이터 없음</p>':'<div class=w><table><tr>'+cols.map(c=>`<th>${esc(c[0])}</th>`).join('')+'</tr>'+rows.map(r=>'<tr>'+cols.map(c=>`<td>${esc(c[1](r))}</td>`).join('')+'</tr>').join('')+'</table></div>';
+
+const VIEWS={
+ users:['이용자',vUsers],rank:['랭크',vRank],rooms:['방',vRooms],inq:['문의',vInq],
+ rep:['신고',vRep],ann:['공지',vAnn],mail:['이메일',vMail],srv:['서버 상태',vSrv]};
+
+async function init(){
+ const c=await(await fetch('/api/config')).json();sb=supabase.createClient(c.url,c.anon);
  sb.auth.onAuthStateChange((_,s)=>{if(s)tok=s.access_token});
  const{data:{session}}=await sb.auth.getSession();session?start(session):$('#login').hidden=false}
-async function login(){const{data,error}=await sb.auth.signInWithPassword({email:$('#em').value,password:$('#pw').value});error?alert(error.message):start(data.session)}
-function start(s){if(s.user.app_metadata?.role!=='admin'){sb.auth.signOut();$('#login').hidden=false;return alert('관리자 권한이 없어요')}
+
+// 입장 확인: 토큰 속 값이 아니라 DB(core.admins)에 직접 물어봄
+async function start(s){
+ let ok=false;
+ try{ok=(await rpc('core','am_i_admin'))===true}catch{}
+ if(!ok){await sb.auth.signOut();$('#app').hidden=true;$('#login').hidden=false;return alert('관리자 권한이 없어요')}
  tok=s.access_token;$('#login').hidden=true;$('#app').hidden=false;
- $('#nav').innerHTML=Object.entries(VIEWS).map(([k,v])=>`<button id="n-${k}" onclick="go('${k}')">${v[0]}</button>`).join('')+'<button onclick="sb.auth.signOut().then(()=>location.reload())">로그아웃</button>';
- sb.channel('inq').on('postgres_changes',{event:'*',schema:'public',table:'inquiries'},()=>cur=='inq'&&inq()).subscribe();
- setInterval(()=>{if(cur=='srv'&&!document.hidden)srv()},10000); go('ann')}
-function go(k){cur=k;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.id=='n-'+k));VIEWS[k][1]()}
-async function ann(){const{data}=await sb.from('announcements').select('*').order('id',{ascending:false});
- $('#v').innerHTML=`<input id=at placeholder="제목"><textarea id=ab placeholder="내용"></textarea><label><input type=checkbox id=ap style="display:inline;width:auto"> 바로 게시</label> <button onclick="addAnn()">등록</button>`+(data||[]).map(a=>`<div class=c><b>${esc(a.title)}</b> <span class=m>${a.published?'게시중':'비공개'}</span><p>${esc(a.body)}</p><button onclick="upAnn(${a.id},${!a.published})">${a.published?'내리기':'게시'}</button> <button onclick="delAnn(${a.id})">삭제</button></div>`).join('')}
-async function addAnn(){await sb.from('announcements').insert({title:$('#at').value,body:$('#ab').value,published:$('#ap').checked});ann()}
-async function upAnn(id,p){await sb.from('announcements').update({published:p}).eq('id',id);ann()}
-async function delAnn(id){if(confirm('삭제할까요?')){await sb.from('announcements').delete().eq('id',id);ann()}}
-async function inq(){const{data}=await sb.from('inquiries').select('*').order('id',{ascending:false}).limit(100);
- $('#v').innerHTML=(data||[]).map(q=>`<div class=c><span class=m>#${q.id} · ${esc(q.email)} · ${new Date(q.created_at).toLocaleString('ko-KR')}</span><p>${esc(q.message)}</p><select onchange="setInq(${q.id},{status:this.value})">${['open','working','done'].map(s=>`<option ${s==q.status?'selected':''}>${s}</option>`).join('')}</select> <button onclick="ansInq(${q.id})">답변 기록</button>${q.answer?`<p>↳ ${esc(q.answer)}</p>`:''}</div>`).join('')||'<p class=m>문의 없음</p>'}
-async function setInq(id,v){await sb.from('inquiries').update(v).eq('id',id);inq()}
-function ansInq(id){const a=prompt('답변 내용');if(a)setInq(id,{answer:a,status:'done'})}
-async function mail(){const{data}=await sb.from('email_logs').select('*').order('id',{ascending:false}).limit(30);
- $('#v').innerHTML=`<input id=mt placeholder="받는 사람"><input id=ms placeholder="제목"><textarea id=mb placeholder="내용"></textarea><button onclick="send()">발송</button><h3>발송 내역</h3>`+tbl(data||[])}
-async function send(){try{await api('/api/send-email',{method:'POST',body:JSON.stringify({to:$('#mt').value,subject:$('#ms').value,body:$('#mb').value})});mail()}catch(e){alert(e.message)}}
-async function tb(){const{data,error}=await sb.from(tn).select('*').limit(50);
- $('#v').innerHTML=`<select onchange="tn=this.value;tb()">${TABLES.map(t=>`<option ${t==tn?'selected':''}>${t}</option>`).join('')}</select> <span class=m>최근 50행</span>`+(error?esc(error.message):tbl(data||[]))}
-async function srv(){try{const d=await api('/api/status');$('#v').innerHTML=`<p class=m>${new Date().toLocaleTimeString('ko-KR')} 갱신 · 10초마다</p>`+tbl(d.services)+'<h3>DB</h3>'+tbl([d.db])}catch(e){$('#v').innerHTML=esc(e.message)}}
-init();
+ $('#nav').innerHTML=Object.entries(VIEWS).map(([k,v])=>`<button id="n-${k}" data-act="view" data-k="${k}">${v[0]}</button>`).join('')+'<button data-act="logout">로그아웃</button>';
+ if(!timer)timer=setInterval(()=>{if(document.hidden)return;tick++;
+  if(cur=='srv')go('srv'); // 서버 상태: 10초마다
+  else if(cur=='inq'&&tick%3==0&&![...document.querySelectorAll('#v textarea')].some(t=>t.value))go('inq')},10000); // 문의: 30초마다 (작성 중이면 건너뜀)
+ go('users')}
+
+async function go(k){
+ cur=k;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.id=='n-'+k));
+ const my=++seq;let h;
+ try{h=await VIEWS[k][1]()}catch(e){h='<p class=err>'+esc(e.message)+'</p>'}
+ if(my===seq)$('#v').innerHTML=h}
+
+async function vUsers(){const d=await rpc('stu','admin_list_users',{p_max:2000});
+ return `<p class=m>STU 이용자 ${d.users.length}명${d.truncated?' (일부만 표시)':''}</p>`+tbl(d.users,[
+  ['닉네임',r=>r.nickname],['이메일',r=>r.email],['성별',r=>gender(r.gender)],['출생연도',r=>r.birthYear],
+  ['국적',r=>r.nationality],['시험',r=>r.exam],['친구코드',r=>r.friendCode],['가입일',r=>fdate(r.createdAt)]])}
+
+async function vRank(){const d=await rpc('stu','admin_list_ranking',{p_period:period,p_max:200});
+ const P={day:'오늘',week:'이번 주(월~)',month:'이번 달',all:'전체'};
+ return `<select id=per data-sel="period">${Object.entries(P).map(([k,v])=>`<option value="${k}" ${k==period?'selected':''}>${v}</option>`).join('')}</select> <span class=m>${d.from?esc(d.from)+' 부터 · ':''}운영자는 순위에서 제외${d.truncated?' · 일부만 표시':''}</span>`+tbl(d.rankings,[
+  ['순위',r=>r.rank??'-'],['닉네임',r=>r.nickname],['이메일',r=>r.email],['시험',r=>r.exam],
+  ['공부시간',r=>fsec(r.totalSeconds)],['운영자',r=>yn(r.isAdmin)],['탈퇴 요청',r=>yn(r.deletionRequested)]])}
+
+async function vRooms(){const d=await rpc('stu','admin_list_rooms',{p_max:2000});
+ return tbl(d.rooms,[['이름',r=>r.name],['종류',r=>r.type],['방장',r=>r.ownerNickname],['인원',r=>r.memberCount],
+  ['공개',r=>yn(r.listed)],['시험',r=>r.exam],['누적',r=>fsec(r.totalSeconds)],['만든 날',r=>fdate(r.createdAt)],
+  ['삭제',r=>r.deleted?'삭제됨 '+fdate(r.deletedAt):'']])}
+
+async function vInq(){const d=await rpc('stu','admin_list_inquiries',{p_status:istat});
+ const bar=`<div class=sub>${[['open','답변 대기'],['answered','답변 완료']].map(([k,v])=>`<button class="${k==istat?'on':''}" data-act="inqstat" data-s="${k}">${v}</button>`).join('')}<button data-act="refresh">새로고침</button></div>`;
+ return bar+(d.inquiries.map(q=>`<div class=c><span class=m>${esc(q.category)} · ${esc(q.nickname||'(알 수 없음)')} · ${esc(fdate(q.createdAt))}${q.meta&&q.meta.device?' · '+esc([q.meta.device,q.meta.os,q.meta.appVersion].filter(Boolean).join(' / ')):''}</span>
+  <p><b>${esc(q.title)}</b></p><p>${esc(q.body)}</p>`+
+  (q.answer?`<p class=m>↳ 답변 (${esc(fdate(q.answer.answeredAt))})</p><p>${esc(q.answer.body)}</p>`:'')+
+  (q.status=='open'?`<textarea placeholder="답변 (1~2000자)" maxlength=2000></textarea><button data-act="reply" data-u="${esc(q.userId)}" data-i="${esc(q.id)}">답변 등록</button>`:'')+`</div>`).join('')||'<p class=m>문의 없음</p>')}
+
+async function vRep(){const d=await rpc('stu','admin_list_reports',{p_max:200});
+ return tbl(d.reports,[['일시',r=>fdate(r.createdAt)],['신고자',r=>r.reporterNickname],['대상',r=>r.targetNickname],
+  ['사유',r=>r.reason],['내용',r=>r.detail],['방',r=>r.roomId]])}
+
+async function vAnn(){const d=await rpc('stu','list_notices');
+ return `<p class=m>STU 공지 (앱에 최대 50개 표시)</p><input id=at placeholder="제목 (1~60자)" maxlength=60><textarea id=ab placeholder="내용 (1~2000자)" maxlength=2000></textarea><label><input type=checkbox id=ap> 상단 고정</label> <button data-act="addnotice">등록</button>`+
+  (d.notices.map(a=>`<div class=c><b>${esc(a.title)}</b> <span class=m>${a.pinned?'고정 · ':''}${esc(fdate(a.createdAt))}</span><p>${esc(a.body)}</p><button data-act="delnotice" data-id="${esc(a.id)}">삭제</button></div>`).join('')||'<p class=m>공지 없음</p>')}
+
+async function vMail(){const d=await rpc('core','admin_list_email_logs',{p_limit:100,p_service:null});
+ return `<input id=mt type=email placeholder="받는 사람"><input id=ms placeholder="제목" maxlength=200><textarea id=mb placeholder="내용"></textarea><button data-act="send">발송</button><h3>발송 내역 <span class=m>(21일 보관)</span></h3>`+
+  tbl(d.logs,[['일시',r=>fdate(r.createdAt)],['받는 사람',r=>r.to],['제목',r=>r.subject],['결과',r=>r.status],['서비스',r=>r.service]])}
+
+async function vSrv(){const d=await api('/api/status');const b=d.db||{};
+ const db=b.error?`<p class=err>${esc(b.error)}</p>`:tbl([b],[['DB 크기',r=>r.dbSizeMb+' MB'],['DB 연결',r=>r.connections],['전체 계정',r=>r.users],
+  ['서비스별 가입자',r=>Object.entries(r.members||{}).map(([k,v])=>k+' '+v).join(', ')]]);
+ return `<p class=m>${new Date().toLocaleTimeString('ko-KR')} 갱신 · 10초마다</p>`+tbl(d.services,[['항목',r=>r.service],['상태',r=>r.ok?'정상':'이상'],['응답코드',r=>r.status],['응답시간',r=>r.ms+' ms']])+'<h3>DB</h3>'+db}
+
+// 버튼·선택 처리 (data-act 방식: 사용자 데이터를 코드에 끼워 넣지 않음)
+document.addEventListener('click',async e=>{
+ const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const a=b.dataset.act;
+ b.disabled=true;
+ try{
+  if(a=='view')await go(b.dataset.k);
+  else if(a=='logout'){await sb.auth.signOut();location.reload();return}
+  else if(a=='refresh')await go(cur);
+  else if(a=='inqstat'){istat=b.dataset.s;await go('inq')}
+  else if(a=='reply'){const t=b.closest('.c').querySelector('textarea').value.trim();
+   if(!t){alert('답변을 입력하세요');}
+   else{await rpc('stu','admin_reply_inquiry',{p_body:{userId:b.dataset.u,inquiryId:b.dataset.i,reply:t}});await go('inq')}}
+  else if(a=='addnotice'){await rpc('stu','post_notice',{p_title:$('#at').value,p_body:$('#ab').value,p_pinned:$('#ap').checked});await go('ann')}
+  else if(a=='delnotice'){if(confirm('삭제할까요?')){await rpc('stu','delete_notice',{p_id:b.dataset.id});await go('ann')}}
+  else if(a=='send'){await api('/api/send-email',{method:'POST',body:JSON.stringify({to:$('#mt').value,subject:$('#ms').value,body:$('#mb').value})});await go('mail')}
+ }catch(err){alert(err.message)}
+ finally{b.disabled=false}});
+document.addEventListener('change',e=>{if(e.target.dataset.sel=='period'){period=e.target.value;go('rank')}});
+$('#lf').addEventListener('submit',async e=>{e.preventDefault();
+ const{data,error}=await sb.auth.signInWithPassword({email:$('#em').value.trim(),password:$('#pw').value});
+ error?alert(error.message):start(data.session)});
+init().catch(e=>{$('#login').hidden=false;alert('초기화 실패: '+e.message)});
 </script></body></html>
